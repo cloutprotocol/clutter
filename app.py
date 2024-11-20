@@ -14,7 +14,14 @@ import music_tag
 import hashlib
 from tkinter.scrolledtext import ScrolledText
 
+# At the top of file, after imports
+# Add docstring for main class
 class FileOrganizerApp:
+    """
+    GUI application for organizing files by type with drag & drop support.
+    Provides file categorization, search, statistics and analysis features.
+    """
+
     def __init__(self, root):
         self.root = root
         self.root.title("Advanced File Organizer")
@@ -393,122 +400,50 @@ class FileOrganizerApp:
         return hasher.hexdigest()
 
     def organize_file(self, file_path):
-        """Organize a single file"""
+        """
+        Move a single file to its category folder based on extension.
+        Handles path normalization and duplicate files.
+        """
         try:
-            file_path = Path(file_path).resolve()
+            # Normalize path and verify file exists
+            file_path = Path(str(file_path)).resolve()
             if not file_path.exists() or not file_path.is_file():
                 self.update_status(f"Skipping: {file_path} (not a file)")
                 return
             
-            # Check available disk space
+            # Check disk space
             dest_dir = self.base_dir
             try:
-                import shutil
                 total, used, free = shutil.disk_usage(str(dest_dir))
                 file_size = file_path.stat().st_size
                 
                 if free < file_size:
-                    self.update_status(f"❌ Not enough disk space to move {file_path.name}. Need {format_size(file_size)}, have {format_size(free)}")
+                    self.update_status(f"❌ Not enough disk space for {file_path.name}")
                     return
             except Exception as e:
                 self.update_status(f"Warning: Could not check disk space: {e}")
             
+            # Get category
             extension = file_path.suffix.lower()
             category = "Others"
             
-            # Map extensions to categories
-            extension_map = {
-                # Images
-                '.jpg': "Images", '.jpeg': "Images", '.png': "Images", '.gif': "Images", 
-                '.bmp': "Images", '.tiff': "Images", '.raw': "Images", '.webp': "Images", 
-                '.svg': "Images", '.ico': "Images", '.psd': "Images", '.ai': "Images", 
-                '.eps': "Images", '.heic': "Images", '.ase': "Images", '.jpg_medium': "Images", 
-                '.png_small': "Images", '.exr': "Images", '.hdr': "Images",
-                
-                # Documents
-                '.pdf': "Documents", '.doc': "Documents", '.docx': "Documents", '.txt': "Documents",
-                '.rtf': "Documents", '.odt': "Documents", '.md': "Documents", '.csv': "Documents",
-                '.xls': "Documents", '.xlsx': "Documents", '.ppt': "Documents", '.pptx': "Documents",
-                '.pages': "Documents", '.numbers': "Documents", '.key': "Documents", 
-                '.epub': "Documents", '.mobi': "Documents", '.indd': "Documents", 
-                '.strings': "Documents", '.vcf': "Documents", '.ans': "Documents", 
-                '.geojson': "Documents", '.hex': "Documents",
-                
-                # Audio
-                '.mp3': "Audio", '.wav': "Audio", '.flac': "Audio", '.m4a': "Audio",
-                '.aac': "Audio", '.mid': "Audio", '.midi': "Audio", '.ogg': "Audio",
-                '.wma': "Audio", '.aiff': "Audio", '.opus': "Audio", '.ac': "Audio",
-                '.aif': "Audio", '.srt': "Audio",
-                
-                # Video
-                '.mp4': "Video", '.mov': "Video", '.avi': "Video", '.mkv': "Video",
-                '.wmv': "Video", '.flv': "Video", '.webm': "Video", '.m4v': "Video",
-                '.3gp': "Video", '.mpg': "Video", '.mpeg': "Video", '.vob': "Video",
-                '.ts': "Video", '.mpd': "Video",
-                
-                # Archives
-                '.zip': "Archives", '.rar': "Archives", '.7z': "Archives", '.tar': "Archives",
-                '.gz': "Archives", '.bz2': "Archives", '.xz': "Archives", '.iso': "Archives",
-                '.dmg': "Archives", '.apk': "Archives", '.torrent': "Archives", 
-                '.pkg': "Archives", '.msi': "Archives",
-                
-                # Code
-                '.py': "Code", '.js': "Code", '.html': "Code", '.css': "Code",
-                '.java': "Code", '.cpp': "Code", '.php': "Code", '.rb': "Code",
-                '.swift': "Code", '.json': "Code", '.xml': "Code", '.sql': "Code",
-                '.sh': "Code", '.bat': "Code", '.ps1': "Code", '.go': "Code",
-                '.rs': "Code", '.tsx': "Code", '.jsx': "Code", '.vue': "Code",
-                '.ts': "Code", '.project': "Code", '.glsl': "Code", '.p8': "Code",
-                
-                # Apps
-                '.app': "Apps", '.exe': "Apps", '.dmg': "Apps", '.pkg': "Apps",
-                '.msi': "Apps", '.deb': "Apps", '.rpm': "Apps", '.apk': "Apps",
-                '.dylib': "Apps", '.bin': "Apps", '.img': "Apps", '.jsdos': "Apps",
-                '.nes': "Apps", '.nui': "Apps", '.pup': "Apps", '.xex': "Apps",
-                
-                # Config
-                '.ini': "Config", '.cfg': "Config", '.conf': "Config", '.plist': "Config",
-                '.yaml': "Config", '.yml': "Config", '.env': "Config", '.gitignore': "Config",
-                '.dockerignore': "Config", '.cer': "Config", '.mobileconfig': "Config",
-                '.icns': "Config", '.mobileprovision': "Config", '.pkpass': "Config",
-                '.rhl': "Config", '.ics': "Config",
-                
-                # 3D
-                '.obj': "3D", '.fbx': "3D", '.blend': "3D", '.blend1': "3D",
-                '.stl': "3D", '.3ds': "3D", '.dae': "3D", '.3dm': "3D",
-                '.dwg': "3D", '.skp': "3D", '.stp': "3D", '.mtl': "3D",
-                '.gltf': "3D", '.glb': "3D", '.usdz': "3D", '.lwo': "3D",
-                
-                # Design
-                '.sketch': "Design", '.ai': "Design", '.psd': "Design",
-                '.indd': "Design", '.eps': "Design", '.cdr': "Design",
-                
-                # Fonts
-                '.ttf': "Fonts", '.otf': "Fonts", '.woff': "Fonts",
-                '.woff2': "Fonts", '.eot': "Fonts",
-                
-                # ML
-                '.pth': "ML", '.safetensors': "ML"
-            }
-            
-            # Get category from extension map
-            category = extension_map.get(extension, "Others")
+            for cat, exts in self.config["categories"].items():
+                if extension in exts:
+                    category = cat
+                    break
             
             self.update_status(f"Categorizing {file_path.name} as {category}")
             
-            # Create destination directory
+            # Create destination path
             dest_dir = self.base_dir / category
             dest_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create destination path
             dest_path = dest_dir / file_path.name
             
-            # Handle filename conflicts
+            # Handle duplicates
             if dest_path.exists():
                 counter = 1
                 while dest_path.exists():
                     stem = file_path.stem
-                    # Remove any existing counter suffix
                     if stem.endswith(f"_{counter-1}"):
                         stem = stem.rsplit('_', 1)[0]
                     new_name = f"{stem}_{counter}{file_path.suffix}"
@@ -517,15 +452,11 @@ class FileOrganizerApp:
             
             try:
                 self.update_status(f"Moving {file_path.name} to {category}")
-                shutil.copy2(str(file_path), str(dest_path))
-                if dest_path.exists():
-                    os.remove(str(file_path))
-                    self.files_processed += 1
-                    self.total_size_processed += dest_path.stat().st_size
-                    self.update_stats_display()
-                    self.update_status(f"✓ Successfully moved to {category}")
-                else:
-                    self.update_status(f"❌ Failed to copy file to destination")
+                shutil.move(str(file_path), str(dest_path))
+                self.files_processed += 1
+                self.total_size_processed += dest_path.stat().st_size
+                self.update_stats_display()
+                self.update_status(f"✓ Successfully moved to {category}")
             except Exception as e:
                 self.update_status(f"❌ Error moving file: {str(e)}")
             
@@ -627,13 +558,19 @@ class FileOrganizerApp:
         self.root.update_idletasks()
 
     def on_drop(self, event):
-        """Handle dropped files"""
+        """
+        Process dropped files/folders from drag & drop event.
+        Handles path parsing and runs processing in background thread.
+        """
         raw_data = event.data
         
         def process_files():
-            # Parse paths handling spaces and brackets
+            # Parse paths handling special characters
             paths = []
+            
+            # Split raw data by space, but preserve paths with spaces in quotes/braces
             current_path = ""
+            in_quotes = False
             in_braces = False
             
             for char in raw_data:
@@ -644,9 +581,9 @@ class FileOrganizerApp:
                     if current_path.strip():
                         paths.append(current_path.strip())
                     current_path = ""
-                elif in_braces:
-                    current_path += char
-                elif char == ' ' and not in_braces:
+                elif char == '"':
+                    in_quotes = not in_quotes
+                elif char == ' ' and not (in_quotes or in_braces):
                     if current_path.strip():
                         paths.append(current_path.strip())
                     current_path = ""
@@ -655,18 +592,44 @@ class FileOrganizerApp:
             
             if current_path.strip():
                 paths.append(current_path.strip())
-            
+
+            # Clean up paths
+            cleaned_paths = []
+            for path in paths:
+                # Remove any surrounding quotes or braces
+                path = path.strip('"{}')
+                # Normalize path string
+                path = path.replace('\u202f', ' ')  # Replace non-breaking space
+                path = path.replace('\\', '/')  # Normalize slashes
+                
+                # Fix duplicate Desktop folders in path
+                parts = Path(path).parts
+                if 'Desktop' in parts:
+                    # Find last occurrence of Desktop and rebuild path
+                    desktop_index = len(parts) - 1 - parts[::-1].index('Desktop')
+                    path = str(Path(*parts[desktop_index:]))
+                
+                if path:
+                    cleaned_paths.append(path)
+
             # Convert to Path objects and filter
             items_to_process = []
             
-            for path_str in paths:
+            for path_str in cleaned_paths:
                 try:
-                    file_path = Path(path_str).resolve()
-                    if file_path.exists():
-                        items_to_process.append(file_path)
-                        self.update_status(f"Added to process: {file_path}")
+                    # Try to find file in Desktop folder first
+                    desktop_path = Path.home() / "Desktop" / path_str
+                    if desktop_path.exists():
+                        items_to_process.append(desktop_path)
+                        self.update_status(f"Added to process: {desktop_path}")
                     else:
-                        self.update_status(f"File not found: {file_path}")
+                        # Try original path as fallback
+                        file_path = Path(path_str).resolve()
+                        if file_path.exists():
+                            items_to_process.append(file_path)
+                            self.update_status(f"Added to process: {file_path}")
+                        else:
+                            self.update_status(f"File not found at: {desktop_path} or {file_path}")
                 except Exception as e:
                     self.update_status(f"Error processing path {path_str}: {str(e)}")
             
