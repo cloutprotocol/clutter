@@ -85,6 +85,8 @@ class FileOrganizerApp:
             "create_date_folders": True,
             "extract_metadata": True,
             "categories": {
+                "Screenshots": [],
+                "Screen Recordings": [],
                 "Images": [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".raw", ".webp", ".svg", 
                           ".ico", ".psd", ".ai", ".eps", ".heic", ".ase", ".jpg_medium", ".png_small",
                           ".exr", ".hdr"],
@@ -411,26 +413,24 @@ class FileOrganizerApp:
                 self.update_status(f"Skipping: {file_path} (not a file)")
                 return
             
-            # Check disk space
-            dest_dir = self.base_dir
-            try:
-                total, used, free = shutil.disk_usage(str(dest_dir))
-                file_size = file_path.stat().st_size
-                
-                if free < file_size:
-                    self.update_status(f"❌ Not enough disk space for {file_path.name}")
-                    return
-            except Exception as e:
-                self.update_status(f"Warning: Could not check disk space: {e}")
-            
-            # Get category
-            extension = file_path.suffix.lower()
-            category = "Others"
-            
-            for cat, exts in self.config["categories"].items():
-                if extension in exts:
-                    category = cat
-                    break
+            # Check for screenshots and screen recordings first
+            filename_lower = file_path.name.lower()
+            if ("screenshot" in filename_lower or 
+                "screen shot" in filename_lower or 
+                "capture" in filename_lower):
+                category = "Screenshots"
+            elif ("screen recording" in filename_lower or 
+                  "screenrecording" in filename_lower or 
+                  "screen-recording" in filename_lower):
+                category = "Screen Recordings"
+            else:
+                # Get category by extension as before
+                extension = file_path.suffix.lower()
+                category = "Others"
+                for cat, exts in self.config["categories"].items():
+                    if extension in exts:
+                        category = cat
+                        break
             
             self.update_status(f"Categorizing {file_path.name} as {category}")
             
@@ -565,74 +565,47 @@ class FileOrganizerApp:
         raw_data = event.data
         
         def process_files():
-            # Parse paths handling special characters
             paths = []
             
-            # Split raw data by space, but preserve paths with spaces in quotes/braces
-            current_path = ""
-            in_quotes = False
-            in_braces = False
+            # Handle different path formats
+            if raw_data.startswith('{'):
+                # Handle paths in braces
+                path_parts = raw_data.strip('{}').split('} {')
+                paths.extend(part.strip() for part in path_parts)
+            else:
+                # Handle space-separated paths
+                paths = raw_data.split(' ')
             
-            for char in raw_data:
-                if char == '{':
-                    in_braces = True
-                elif char == '}':
-                    in_braces = False
-                    if current_path.strip():
-                        paths.append(current_path.strip())
-                    current_path = ""
-                elif char == '"':
-                    in_quotes = not in_quotes
-                elif char == ' ' and not (in_quotes or in_braces):
-                    if current_path.strip():
-                        paths.append(current_path.strip())
-                    current_path = ""
-                else:
-                    current_path += char
-            
-            if current_path.strip():
-                paths.append(current_path.strip())
-
-            # Clean up paths
-            cleaned_paths = []
-            for path in paths:
-                # Remove any surrounding quotes or braces
-                path = path.strip('"{}')
-                # Normalize path string
-                path = path.replace('\u202f', ' ')  # Replace non-breaking space
-                path = path.replace('\\', '/')  # Normalize slashes
-                
-                # Fix duplicate Desktop folders in path
-                parts = Path(path).parts
-                if 'Desktop' in parts:
-                    # Find last occurrence of Desktop and rebuild path
-                    desktop_index = len(parts) - 1 - parts[::-1].index('Desktop')
-                    path = str(Path(*parts[desktop_index:]))
-                
-                if path:
-                    cleaned_paths.append(path)
-
-            # Convert to Path objects and filter
+            # Clean up paths and process files
             items_to_process = []
-            
-            for path_str in cleaned_paths:
+            for path in paths:
                 try:
-                    # Try to find file in Desktop folder first
-                    desktop_path = Path.home() / "Desktop" / path_str
-                    if desktop_path.exists():
-                        items_to_process.append(desktop_path)
-                        self.update_status(f"Added to process: {desktop_path}")
+                    # Clean and normalize path
+                    clean_path = path.strip('"{}').strip()
+                    
+                    # Convert to Path object and resolve
+                    if clean_path.startswith('file://'):
+                        clean_path = clean_path[7:]
+                    file_path = Path(clean_path).expanduser().resolve()
+                    
+                    if file_path.exists():
+                        items_to_process.append(file_path)
+                        self.update_status(f"Added to process: {file_path}")
                     else:
-                        # Try original path as fallback
-                        file_path = Path(path_str).resolve()
+                        # Try URL decoding the path
+                        from urllib.parse import unquote
+                        decoded_path = unquote(clean_path)
+                        file_path = Path(decoded_path).expanduser().resolve()
+                        
                         if file_path.exists():
                             items_to_process.append(file_path)
                             self.update_status(f"Added to process: {file_path}")
                         else:
-                            self.update_status(f"File not found at: {desktop_path} or {file_path}")
+                            self.update_status(f"File not found: {file_path} (raw: {path})")
                 except Exception as e:
-                    self.update_status(f"Error processing path {path_str}: {str(e)}")
+                    self.update_status(f"Error processing path {path}: {str(e)}")
             
+            # Process files
             total_items = len(items_to_process)
             self.update_status(f"Found {total_items} valid items to process")
             
