@@ -12,6 +12,59 @@ public enum FilterOption: String, CaseIterable {
     case favorites = "Favorites"
 }
 
+public enum Theme: String, CaseIterable {
+    case neuro = "Neuro"
+    case matrix = "Matrix"
+}
+
+// Add Theme extensions
+extension Theme {
+    var primaryColor: Color {
+        switch self {
+        case .neuro:
+            return Color(.sRGB, red: 0.9, green: 0.9, blue: 0.9, opacity: 1)
+        case .matrix:
+            return .green
+        }
+    }
+    
+    var secondaryColor: Color {
+        switch self {
+        case .neuro:
+            return Color(.sRGB, red: 0.7, green: 0.7, blue: 0.7, opacity: 1)
+        case .matrix:
+            return .green.opacity(0.7)
+        }
+    }
+    
+    var backgroundColor: Color {
+        switch self {
+        case .neuro:
+            return Color(.sRGB, red: 0.12, green: 0.12, blue: 0.13, opacity: 0.95)
+        case .matrix:
+            return Color.black.opacity(0.95)
+        }
+    }
+    
+    var glassEffect: Color {
+        switch self {
+        case .neuro:
+            return Color.white.opacity(0.05)
+        case .matrix:
+            return Color.black.opacity(0.3)
+        }
+    }
+    
+    var accentColor: Color {
+        switch self {
+        case .neuro:
+            return Color(.sRGB, red: 0.4, green: 0.4, blue: 0.45, opacity: 1)
+        case .matrix:
+            return .green
+        }
+    }
+}
+
 // Update padding references
 extension Edge {
     static let vertical = Edge.Set([.top, .bottom])
@@ -53,6 +106,7 @@ final class MusicViewModel: ObservableObject {
     @Published var repeatMode: RepeatMode = .none
     @Published var fftData: [Float] = Array(repeating: 0, count: 512)
     @Published var favorites: Set<UUID> = []
+    @Published var theme: Theme = .neuro
     
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -622,6 +676,8 @@ public struct MusicView: View {
     @State private var showingPlaylist = true
     @State private var searchText = ""
     @State private var selectedFilter: FilterOption = .all
+    @State private var isSettingsActive = false
+    @State private var showingThemeMenu = false
     
     public init(fileManager: Cr4sh0utManagers.FileManager = .shared) {
         _viewModel = StateObject(wrappedValue: MusicViewModel(fileManager: fileManager))
@@ -629,11 +685,15 @@ public struct MusicView: View {
     
     public var body: some View {
         ZStack {
-            Color.black.opacity(0.95)
+            viewModel.theme.backgroundColor
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
-                CompactHeaderView(viewRouter: viewRouter, showingPlaylist: $showingPlaylist)
+                CompactHeaderView(
+                    viewRouter: viewRouter,
+                    showingPlaylist: $showingPlaylist,
+                    showingThemeMenu: $showingThemeMenu
+                )
                 
                 if viewModel.isLoading {
                     Spacer()
@@ -641,26 +701,71 @@ public struct MusicView: View {
                         .scaleEffect(1.5)
                     Spacer()
                 } else {
-                    PlayerView(viewModel: viewModel)
-                        .frame(height: 160)
-                    
-                    if showingPlaylist {
-                        VStack(spacing: 0) {
-                            SearchFilterBar(viewModel: viewModel, searchText: $searchText, selectedFilter: $selectedFilter)
-                            
-                            Divider()
-                                .background(Color.green.opacity(0.3))
-                            
-                            PlaylistView(
-                                viewModel: viewModel,
-                                searchText: $searchText,
-                                selectedFilter: $selectedFilter
-                            )
+                    VStack(spacing: 0) {
+                        PlayerView(viewModel: viewModel)
+                            .frame(height: 160)
+                        
+                        if showingPlaylist {
+                            VStack(spacing: 0) {
+                                // Search and filter bar
+                                HStack(spacing: 8) {
+                                    // Search field
+                                    HStack {
+                                        Image(systemName: "magnifyingglass")
+                                            .foregroundColor(viewModel.theme.secondaryColor)
+                                        TextField("Search tracks...", text: $searchText)
+                                            .textFieldStyle(.plain)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(viewModel.theme.primaryColor)
+                                        if !searchText.isEmpty {
+                                            Button(action: { searchText = "" }) {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .foregroundColor(viewModel.theme.secondaryColor)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                    .padding(8)
+                                    .background(viewModel.theme.glassEffect)
+                                    .cornerRadius(6)
+                                    .frame(maxWidth: 200)
+                                    
+                                    Spacer()
+                                    
+                                    // Filter buttons
+                                    HStack(spacing: 4) {
+                                        ForEach(FilterOption.allCases, id: \.self) { filter in
+                                            Button(action: { selectedFilter = filter }) {
+                                                Text(filter.rawValue)
+                                                    .font(.system(size: 11))
+                                                    .padding(.horizontal, 8)
+                                                    .padding(.vertical, 4)
+                                                    .background(selectedFilter == filter ? viewModel.theme.primaryColor : viewModel.theme.glassEffect)
+                                                    .foregroundColor(selectedFilter == filter ? .black : viewModel.theme.primaryColor)
+                                                    .cornerRadius(4)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(viewModel.theme.backgroundColor)
+                                
+                                PlaylistView(
+                                    viewModel: viewModel,
+                                    searchText: $searchText,
+                                    selectedFilter: $selectedFilter
+                                )
+                            }
+                            .background(viewModel.theme.backgroundColor)
                         }
-                        .background(Color.black.opacity(0.5))
                     }
                 }
             }
+        }
+        .popover(isPresented: $showingThemeMenu) {
+            ThemeMenu(viewModel: viewModel, isPresented: $showingThemeMenu)
         }
         .task {
             await viewModel.loadContent()
@@ -668,19 +773,24 @@ public struct MusicView: View {
     }
 }
 
+// Update CompactHeaderView with settings button
 private struct CompactHeaderView: View {
     @ObservedObject var viewRouter: ViewRouter
     @Binding var showingPlaylist: Bool
+    @Binding var showingThemeMenu: Bool
     
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button(action: {
                 withAnimation {
                     viewRouter.currentView = .menu
                 }
             }) {
                 Image(systemName: "house")
-                    .font(.title2)
+                    .font(.system(size: 16))
+                    .frame(width: 32, height: 32)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
             }
             
             Spacer()
@@ -690,14 +800,69 @@ private struct CompactHeaderView: View {
                     showingPlaylist.toggle()
                 }
             }) {
-                Image(systemName: showingPlaylist ? "list.bullet.circle.fill" : "list.bullet.circle")
-                    .font(.title2)
+                Image(systemName: showingPlaylist ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
+                    .font(.system(size: 16))
+                    .frame(width: 32, height: 32)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
+            }
+            
+            Button(action: { showingThemeMenu.toggle() }) {
+                Image(systemName: showingThemeMenu ? "gearshape.fill" : "gearshape")
+                    .font(.system(size: 16))
+                    .frame(width: 32, height: 32)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(6)
             }
         }
         .buttonStyle(.plain)
         .foregroundColor(.white)
         .padding(8)
-        .background(Color.black.opacity(0.3))
+    }
+}
+
+// Update theme menu styling
+struct ThemeMenu: View {
+    @ObservedObject var viewModel: MusicViewModel
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Theme")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(viewModel.theme.primaryColor)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            
+            ForEach(Theme.allCases, id: \.self) { theme in
+                Button(action: { 
+                    viewModel.theme = theme
+                    isPresented = false
+                }) {
+                    HStack {
+                        Text(theme.rawValue)
+                            .font(.system(size: 12))
+                        Spacer()
+                        if viewModel.theme == theme {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10))
+                        }
+                    }
+                    .foregroundColor(viewModel.theme.primaryColor)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .background(
+                    viewModel.theme == theme ? 
+                    viewModel.theme.glassEffect : Color.clear
+                )
+            }
+        }
+        .frame(width: 140)
+        .background(viewModel.theme.backgroundColor)
     }
 }
 
@@ -713,15 +878,15 @@ private struct PlayerView: View {
                     Text(track.title)
                         .lineLimit(1)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.green)
+                        .foregroundColor(viewModel.theme.primaryColor)
                     
                     if let artist = track.artist {
                         Text("•")
-                            .foregroundColor(.green.opacity(0.5))
+                            .foregroundColor(viewModel.theme.secondaryColor)
                         Text(artist)
                             .lineLimit(1)
                             .font(.system(size: 14))
-                            .foregroundColor(.green.opacity(0.7))
+                            .foregroundColor(viewModel.theme.secondaryColor)
                     }
                     Spacer()
                 }
@@ -732,19 +897,17 @@ private struct PlayerView: View {
             HStack(spacing: 4) {
                 Text(formatTime(viewModel.currentTime))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.green)
+                    .foregroundColor(viewModel.theme.secondaryColor)
                 
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        // Track background
                         Capsule()
-                            .fill(Color.green.opacity(0.2))
-                            .frame(height: 6)
+                            .fill(viewModel.theme.glassEffect)
+                            .frame(height: 4)
                         
-                        // Progress
                         Capsule()
-                            .fill(Color.green)
-                            .frame(width: geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1)), height: 6)
+                            .fill(viewModel.theme.primaryColor)
+                            .frame(width: geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1)), height: 4)
                     }
                     .frame(maxHeight: .infinity)
                     .contentShape(Rectangle())
@@ -760,7 +923,7 @@ private struct PlayerView: View {
                 
                 Text(formatTime(viewModel.duration))
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.green)
+                    .foregroundColor(viewModel.theme.secondaryColor)
             }
             .padding(.horizontal)
             
@@ -861,7 +1024,7 @@ private struct PlayerView: View {
                 .padding(.horizontal)
         }
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.3))
+        .background(viewModel.theme.backgroundColor)
     }
     
     private func formatTime(_ time: Double) -> String {
@@ -871,7 +1034,70 @@ private struct PlayerView: View {
     }
 }
 
-// Update PlaylistView
+// Break up PlaylistView into smaller components
+private struct PlaylistItemView: View {
+    @ObservedObject var viewModel: MusicViewModel
+    let item: AudioItem
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(viewModel.theme.primaryColor)
+                    .lineLimit(1)
+                
+                HStack(spacing: 6) {
+                    if let artist = item.artist {
+                        Text(artist)
+                            .font(.system(size: 11))
+                            .foregroundColor(viewModel.theme.secondaryColor)
+                    }
+                    Text(item.fileType.uppercased())
+                        .font(.system(size: 9, weight: .medium))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(viewModel.theme.accentColor.opacity(0.2))
+                        .cornerRadius(4)
+                        .foregroundColor(viewModel.theme.accentColor)
+                }
+            }
+            
+            Spacer()
+            
+            HStack(spacing: 12) {
+                Text(formatTime(item.duration))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(viewModel.theme.secondaryColor)
+                
+                Button(action: { viewModel.toggleFavorite(item) }) {
+                    Image(systemName: viewModel.isFavorite(item) ? "star.fill" : "star")
+                        .foregroundColor(viewModel.isFavorite(item) ? .yellow : viewModel.theme.secondaryColor)
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            viewModel.currentTrack?.id == item.id ?
+            viewModel.theme.accentColor.opacity(0.1) : Color.clear
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.playTrack(item)
+        }
+    }
+    
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let remainingSeconds = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+// Update PlaylistView to use PlaylistItemView
 private struct PlaylistView: View {
     @ObservedObject var viewModel: MusicViewModel
     @Binding var searchText: String
@@ -885,66 +1111,14 @@ private struct PlaylistView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(filteredItems) { item in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.title)
-                                .font(.system(size: 13))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            HStack(spacing: 4) {
-                                if let artist = item.artist {
-                                    Text(artist)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.white.opacity(0.6))
-                                }
-                                Text(item.fileType.uppercased())
-                                    .font(.system(size: 9))
-                                    .padding(.horizontal, 4)
-                                    .padding(.vertical, 1)
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(3)
-                            }
-                        }
-                        
-                        Spacer()
-                        
-                        HStack(spacing: 12) {
-                            Text(formatTime(item.duration))
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.6))
-                            
-                            Button(action: { viewModel.toggleFavorite(item) }) {
-                                Image(systemName: viewModel.isFavorite(item) ? "star.fill" : "star")
-                                    .foregroundColor(viewModel.isFavorite(item) ? .yellow : .green.opacity(0.7))
-                                    .font(.system(size: 12))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 6)
-                    .background(
-                        viewModel.currentTrack?.id == item.id ?
-                        Color.green.opacity(0.2) : Color.clear
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        viewModel.playTrack(item)
-                    }
+                    PlaylistItemView(viewModel: viewModel, item: item)
                     
                     Divider()
-                        .background(Color.white.opacity(0.1))
+                        .background(viewModel.theme.glassEffect)
                 }
             }
         }
         .scrollContentBackground(.hidden)
-    }
-    
-    private func formatTime(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds) / 60
-        let remainingSeconds = Int(seconds) % 60
-        return String(format: "%d:%02d", minutes, remainingSeconds)
     }
 }
 
@@ -1153,27 +1327,28 @@ struct SearchFilterBar: View {
     @ObservedObject var viewModel: MusicViewModel
     @Binding var searchText: String
     @Binding var selectedFilter: FilterOption
+    @State private var showingSettings = false
     
     var body: some View {
         HStack(spacing: 8) {
             // Search field
             HStack {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(.green.opacity(0.7))
+                    .foregroundColor(viewModel.theme.secondaryColor)
                 TextField("Search tracks...", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
-                    .foregroundColor(.green)
+                    .foregroundColor(viewModel.theme.primaryColor)
                 if !searchText.isEmpty {
                     Button(action: { searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.green.opacity(0.7))
+                            .foregroundColor(viewModel.theme.secondaryColor)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(8)
-            .background(Color.black.opacity(0.3))
+            .background(viewModel.theme.glassEffect)
             .cornerRadius(6)
             .frame(maxWidth: 200)
             
@@ -1187,13 +1362,35 @@ struct SearchFilterBar: View {
                             .font(.system(size: 11))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(selectedFilter == filter ? Color.green : Color.black.opacity(0.3))
-                            .foregroundColor(selectedFilter == filter ? .black : .green)
+                            .background(selectedFilter == filter ? viewModel.theme.primaryColor : viewModel.theme.glassEffect)
+                            .foregroundColor(selectedFilter == filter ? .black : viewModel.theme.primaryColor)
                             .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
                 }
             }
+            
+            // Settings button
+            Menu {
+                Menu("Theme") {
+                    ForEach(Theme.allCases, id: \.self) { theme in
+                        Button(action: { viewModel.theme = theme }) {
+                            HStack {
+                                Text(theme.rawValue)
+                                if viewModel.theme == theme {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(viewModel.theme.secondaryColor)
+            }
+            .menuStyle(.borderlessButton)
+            .frame(width: 24, height: 24)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
