@@ -6,6 +6,17 @@ import AVFoundation
 import AudioKit
 import AudioKitUI
 
+public enum FilterOption: String, CaseIterable {
+    case all = "All"
+    case recent = "Recent"
+    case favorites = "Favorites"
+}
+
+// Update padding references
+extension Edge {
+    static let vertical = Edge.Set([.top, .bottom])
+}
+
 // MARK: - Models
 struct AudioItem: Identifiable, Hashable {
     let id = UUID()
@@ -204,12 +215,12 @@ final class MusicViewModel: ObservableObject {
         guard let player = player else { return }
         let targetTime = duration * percentage
         let time = CMTime(seconds: targetTime, preferredTimescale: 600)
-        player.seek(to: time) { [weak self] _ in
-            if let player = self?.player1 {
-                player.seek(time: targetTime)
-            }
+        
+        Task { @MainActor in
+            player.seek(to: time)
+            player1?.seek(time: targetTime)
+            currentTime = targetTime
         }
-        currentTime = targetTime
     }
     
     func playNext() {
@@ -329,6 +340,32 @@ final class MusicViewModel: ObservableObject {
         self.items = newItems.sorted { $0.title < $1.title }
         self.totalStats = FolderStats(totalFiles: audioFiles.count, totalSize: totalSize)
         isLoading = false
+    }
+    
+    func filterItems(searchText: String, filter: FilterOption) -> [AudioItem] {
+        var filtered = items
+        
+        // Apply search filter
+        if !searchText.isEmpty {
+            filtered = filtered.filter { item in
+                item.title.localizedCaseInsensitiveContains(searchText) ||
+                (item.artist?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        }
+        
+        // Apply category filter
+        switch filter {
+        case .recent:
+            filtered.sort { $0.modificationDate > $1.modificationDate }
+            filtered = Array(filtered.prefix(20))
+        case .favorites:
+            // TODO: Implement favorites
+            break
+        case .all:
+            break
+        }
+        
+        return filtered
     }
 }
 
@@ -560,6 +597,8 @@ public struct MusicView: View {
     @StateObject private var viewModel: MusicViewModel
     @ObservedObject private var viewRouter = ViewRouter.shared
     @State private var showingPlaylist = true
+    @State private var searchText = ""
+    @State private var selectedFilter: FilterOption = .all
     
     public init(fileManager: Cr4sh0utManagers.FileManager = .shared) {
         _viewModel = StateObject(wrappedValue: MusicViewModel(fileManager: fileManager))
@@ -583,7 +622,19 @@ public struct MusicView: View {
                         .frame(height: 160)
                     
                     if showingPlaylist {
-                        PlaylistView(viewModel: viewModel)
+                        VStack(spacing: 0) {
+                            SearchFilterBar(viewModel: viewModel, searchText: $searchText, selectedFilter: $selectedFilter)
+                            
+                            Divider()
+                                .background(Color.green.opacity(0.3))
+                            
+                            PlaylistView(
+                                viewModel: viewModel,
+                                searchText: $searchText,
+                                selectedFilter: $selectedFilter
+                            )
+                        }
+                        .background(Color.black.opacity(0.5))
                     }
                 }
             }
@@ -689,7 +740,6 @@ private struct PlayerView: View {
                     .foregroundColor(.green)
             }
             .padding(.horizontal)
-            .padding(.vertical, 8)
             
             // Controls
             HStack(spacing: 16) {
@@ -749,17 +799,16 @@ private struct PlayerView: View {
                         Image(systemName: "speaker.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.green)
-                            .frame(height: 24)
                         
                         GeometryReader { geometry in
                             ZStack(alignment: .leading) {
                                 Capsule()
                                     .fill(Color.green.opacity(0.2))
-                                    .frame(height: 6)
+                                    .frame(height: 4)
                                 
                                 Capsule()
                                     .fill(Color.green)
-                                    .frame(width: geometry.size.width * CGFloat(viewModel.volume), height: 6)
+                                    .frame(width: geometry.size.width * CGFloat(viewModel.volume), height: 4)
                             }
                             .frame(maxHeight: .infinity)
                             .contentShape(Rectangle())
@@ -776,7 +825,6 @@ private struct PlayerView: View {
                         Image(systemName: "speaker.wave.3.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.green)
-                            .frame(height: 24)
                     }
                 }
             }
@@ -800,49 +848,64 @@ private struct PlayerView: View {
     }
 }
 
+// Update PlaylistView
 private struct PlaylistView: View {
     @ObservedObject var viewModel: MusicViewModel
+    @Binding var searchText: String
+    @Binding var selectedFilter: FilterOption
+    
+    var filteredItems: [AudioItem] {
+        viewModel.filterItems(searchText: searchText, filter: selectedFilter)
+    }
     
     var body: some View {
-        List(viewModel.items) { item in
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.system(size: 13))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    
-                    HStack(spacing: 4) {
-                        if let artist = item.artist {
-                            Text(artist)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.6))
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(filteredItems) { item in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            
+                            HStack(spacing: 4) {
+                                if let artist = item.artist {
+                                    Text(artist)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                Text(item.fileType.uppercased())
+                                    .font(.system(size: 9))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(Color.white.opacity(0.1))
+                                    .cornerRadius(3)
+                            }
                         }
-                        Text(item.fileType.uppercased())
-                            .font(.system(size: 9))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(3)
+                        
+                        Spacer()
+                        
+                        Text(formatTime(item.duration))
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.6))
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 6)
+                    .background(
+                        viewModel.currentTrack?.id == item.id ?
+                        Color.green.opacity(0.2) : Color.clear
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        viewModel.playTrack(item)
+                    }
+                    
+                    Divider()
+                        .background(Color.white.opacity(0.1))
                 }
-                
-                Spacer()
-                
-                Text(formatTime(item.duration))
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.6))
-            }
-            .contentShape(Rectangle())
-            .listRowBackground(
-                viewModel.currentTrack?.id == item.id ?
-                Color.green.opacity(0.2) : Color.clear
-            )
-            .onTapGesture {
-                viewModel.playTrack(item)
             }
         }
-        .listStyle(.plain)
         .scrollContentBackground(.hidden)
     }
     
@@ -1015,6 +1078,93 @@ struct TimelineScrubber: View {
         } else {
             return geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1))
         }
+    }
+}
+
+// Update PopoutPlayerView
+struct PopoutPlayerView: View {
+    @ObservedObject var viewModel: MusicViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var selectedFilter: FilterOption = .all
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Now Playing")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.green)
+                Spacer()
+                Button(action: { dismiss() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12))
+                        .foregroundColor(.green)
+                }
+            }
+            .padding(8)
+            .background(Color.black.opacity(0.8))
+            
+            // Player content
+            PlayerView(viewModel: viewModel)
+                .frame(height: 160)
+            
+            PlaylistView(viewModel: viewModel, searchText: $searchText, selectedFilter: $selectedFilter)
+        }
+        .frame(width: 300, height: 500)
+        .background(Color.black.opacity(0.95))
+    }
+}
+
+// Update SearchFilterBar
+struct SearchFilterBar: View {
+    @ObservedObject var viewModel: MusicViewModel
+    @Binding var searchText: String
+    @Binding var selectedFilter: FilterOption
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Search field
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.green.opacity(0.7))
+                TextField("Search tracks...", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundColor(.green)
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.green.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+            .background(Color.black.opacity(0.3))
+            .cornerRadius(6)
+            .frame(maxWidth: 200)
+            
+            Spacer()
+            
+            // Filter buttons
+            HStack(spacing: 4) {
+                ForEach(FilterOption.allCases, id: \.self) { filter in
+                    Button(action: { selectedFilter = filter }) {
+                        Text(filter.rawValue)
+                            .font(.system(size: 11))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(selectedFilter == filter ? Color.green : Color.black.opacity(0.3))
+                            .foregroundColor(selectedFilter == filter ? .black : .green)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
     }
 }
 
