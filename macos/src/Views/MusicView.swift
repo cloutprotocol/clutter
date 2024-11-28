@@ -107,6 +107,11 @@ final class MusicViewModel: ObservableObject {
     @Published var fftData: [Float] = Array(repeating: 0, count: 512)
     @Published var favorites: Set<UUID> = []
     @Published var theme: Theme = .neuro
+    @Published var showEqualizer = false
+    @Published var enableGaplessPlayback = true
+    @Published var enableCrossfade = false
+    @Published var enableAutoPlay = false
+    @Published var rememberPlaybackPosition = true
     
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -678,6 +683,7 @@ public struct MusicView: View {
     @State private var selectedFilter: FilterOption = .all
     @State private var isSettingsActive = false
     @State private var showingThemeMenu = false
+    @State private var showingSettings = false
     
     public init(fileManager: Cr4sh0utManagers.FileManager = .shared) {
         _viewModel = StateObject(wrappedValue: MusicViewModel(fileManager: fileManager))
@@ -690,9 +696,10 @@ public struct MusicView: View {
             
             VStack(spacing: 0) {
                 CompactHeaderView(
+                    viewModel: viewModel,
                     viewRouter: viewRouter,
                     showingPlaylist: $showingPlaylist,
-                    showingThemeMenu: $showingThemeMenu
+                    showingSettings: $showingSettings
                 )
                 
                 if viewModel.isLoading {
@@ -763,7 +770,13 @@ public struct MusicView: View {
                     }
                 }
             }
+            
+            if showingSettings {
+                SettingsMenu(viewModel: viewModel, isPresented: $showingSettings)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeOut(duration: 0.2), value: showingSettings)
         .popover(isPresented: $showingThemeMenu) {
             ThemeMenu(viewModel: viewModel, isPresented: $showingThemeMenu)
         }
@@ -775,9 +788,10 @@ public struct MusicView: View {
 
 // Update CompactHeaderView with settings button
 private struct CompactHeaderView: View {
+    @ObservedObject var viewModel: MusicViewModel
     @ObservedObject var viewRouter: ViewRouter
     @Binding var showingPlaylist: Bool
-    @Binding var showingThemeMenu: Bool
+    @Binding var showingSettings: Bool
     
     var body: some View {
         HStack(spacing: 8) {
@@ -807,8 +821,12 @@ private struct CompactHeaderView: View {
                     .cornerRadius(6)
             }
             
-            Button(action: { showingThemeMenu.toggle() }) {
-                Image(systemName: showingThemeMenu ? "gearshape.fill" : "gearshape")
+            Button(action: {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showingSettings.toggle()
+                }
+            }) {
+                Image(systemName: showingSettings ? "gearshape.fill" : "gearshape")
                     .font(.system(size: 16))
                     .frame(width: 32, height: 32)
                     .background(Color.black.opacity(0.2))
@@ -1394,6 +1412,231 @@ struct SearchFilterBar: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+    }
+}
+
+// Add UserSettings model
+struct UserSettings: Codable {
+    var theme: String = "neuro"
+    var showEqualizer: Bool = false
+    var enableGaplessPlayback: Bool = true
+    var enableCrossfade: Bool = false
+    var enableAutoPlay: Bool = false
+    var rememberPlaybackPosition: Bool = true
+}
+
+// Update MusicViewModel with settings persistence
+extension MusicViewModel {
+    private static let settingsKey = "userSettings"
+    
+    private func saveSettings() {
+        let settings = UserSettings(
+            theme: theme.rawValue,
+            showEqualizer: showEqualizer,
+            enableGaplessPlayback: enableGaplessPlayback,
+            enableCrossfade: enableCrossfade,
+            enableAutoPlay: enableAutoPlay,
+            rememberPlaybackPosition: rememberPlaybackPosition
+        )
+        
+        if let encoded = try? JSONEncoder().encode(settings) {
+            UserDefaults.standard.set(encoded, forKey: Self.settingsKey)
+        }
+    }
+    
+    private func loadSettings() {
+        guard let data = UserDefaults.standard.data(forKey: Self.settingsKey),
+              let settings = try? JSONDecoder().decode(UserSettings.self, from: data) else {
+            return
+        }
+        
+        if let savedTheme = Theme(rawValue: settings.theme) {
+            theme = savedTheme
+        }
+        showEqualizer = settings.showEqualizer
+        enableGaplessPlayback = settings.enableGaplessPlayback
+        enableCrossfade = settings.enableCrossfade
+        enableAutoPlay = settings.enableAutoPlay
+        rememberPlaybackPosition = settings.rememberPlaybackPosition
+    }
+    
+    func updateSetting<T>(_ keyPath: ReferenceWritableKeyPath<MusicViewModel, T>, value: T) {
+        self[keyPath: keyPath] = value
+        saveSettings()
+    }
+}
+
+// Update SettingsMenu with new styling
+struct SettingsMenu: View {
+    @ObservedObject var viewModel: MusicViewModel
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.5)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        isPresented = false
+                    }
+                }
+            
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Settings")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(viewModel.theme.primaryColor)
+                    Spacer()
+                    Button(action: {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            isPresented = false
+                        }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12))
+                            .foregroundColor(viewModel.theme.secondaryColor)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                
+                Divider()
+                    .background(viewModel.theme.glassEffect)
+                
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Appearance section
+                        SettingSection(title: "Appearance") {
+                            HStack(spacing: 8) {
+                                ForEach(Theme.allCases, id: \.self) { theme in
+                                    Button(action: { viewModel.updateSetting(\.theme, value: theme) }) {
+                                        HStack(spacing: 6) {
+                                            Circle()
+                                                .fill(theme.primaryColor)
+                                                .frame(width: 12, height: 12)
+                                            Text(theme.rawValue)
+                                                .font(.system(size: 12))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(viewModel.theme == theme ? viewModel.theme.glassEffect : Color.clear)
+                                        .cornerRadius(6)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundColor(viewModel.theme.primaryColor)
+                                }
+                            }
+                        }
+                        
+                        // Audio section
+                        SettingSection(title: "Audio") {
+                            VStack(spacing: 8) {
+                                SettingToggle(
+                                    icon: "waveform",
+                                    title: "16-Band Equalizer",
+                                    isOn: Binding(
+                                        get: { viewModel.showEqualizer },
+                                        set: { viewModel.updateSetting(\.showEqualizer, value: $0) }
+                                    )
+                                )
+                                
+                                SettingToggle(
+                                    icon: "infinity",
+                                    title: "Gapless Playback",
+                                    isOn: Binding(
+                                        get: { viewModel.enableGaplessPlayback },
+                                        set: { viewModel.updateSetting(\.enableGaplessPlayback, value: $0) }
+                                    )
+                                )
+                                
+                                SettingToggle(
+                                    icon: "arrow.left.and.right",
+                                    title: "Crossfade Tracks",
+                                    isOn: Binding(
+                                        get: { viewModel.enableCrossfade },
+                                        set: { viewModel.updateSetting(\.enableCrossfade, value: $0) }
+                                    )
+                                )
+                            }
+                        }
+                        
+                        // Playback section
+                        SettingSection(title: "Playback") {
+                            VStack(spacing: 8) {
+                                SettingToggle(
+                                    icon: "play.circle",
+                                    title: "Auto-play on Launch",
+                                    isOn: Binding(
+                                        get: { viewModel.enableAutoPlay },
+                                        set: { viewModel.updateSetting(\.enableAutoPlay, value: $0) }
+                                    )
+                                )
+                                
+                                SettingToggle(
+                                    icon: "bookmark",
+                                    title: "Remember Position",
+                                    isOn: Binding(
+                                        get: { viewModel.rememberPlaybackPosition },
+                                        set: { viewModel.updateSetting(\.rememberPlaybackPosition, value: $0) }
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+            .frame(width: 280)
+            .background(viewModel.theme.backgroundColor.opacity(0.98))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(viewModel.theme.glassEffect, lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.2), radius: 15)
+            .padding(40)
+        }
+    }
+}
+
+// Add SettingToggle helper view
+struct SettingToggle: View {
+    let icon: String
+    let title: String
+    @Binding var isOn: Bool
+    
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                Text(title)
+                    .font(.system(size: 12))
+            }
+        }
+        .toggleStyle(SwitchToggleStyle(tint: Color.green))
+    }
+}
+
+// Update SettingSection
+struct SettingSection<Content: View>: View {
+    let title: String
+    let content: Content
+    
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.gray)
+            content
+        }
     }
 }
 
