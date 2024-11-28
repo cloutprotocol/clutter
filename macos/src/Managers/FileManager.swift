@@ -1,22 +1,21 @@
 import Foundation
-import SwiftUI
 
-class FileSystemManager: ObservableObject {
-    static let shared = FileSystemManager()
+public class FileManager: ObservableObject {
+    public static let shared = FileManager()
     
-    @Published var baseDir: URL {
+    @Published public var baseDir: URL {
         didSet {
             saveSettings()
         }
     }
     
-    @Published private(set) var currentDuplicateHandling: String {
+    @Published public var currentDuplicateHandling: String {
         didSet {
             saveSettings()
         }
     }
     
-    @Published var categories: [String: [String]] = [
+    @Published public var categories: [String: [String]] = [
         "Applications": [".app", ".vst3", ".dmg"],
         "Logic Projects": [".logicx"],
         "Screenshots": [],
@@ -47,11 +46,10 @@ class FileSystemManager: ObservableObject {
     ]
     
     private var customPaths: [String: String] = [:]
-    private let settingsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    private let settingsURL = Foundation.FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("cr4sh0ut_settings.json")
     
     private init() {
-        // Load settings or use defaults
         if let data = try? Data(contentsOf: settingsURL),
            let settings = try? JSONDecoder().decode([String: String].self, from: data) {
             baseDir = URL(fileURLWithPath: settings["baseDir"] ?? "")
@@ -61,42 +59,42 @@ class FileSystemManager: ObservableObject {
                 customPaths = paths
             }
         } else {
-            baseDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            baseDir = Foundation.FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("OrganizedFiles")
             currentDuplicateHandling = "rename"
         }
         
-        try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        try? Foundation.FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
     }
     
-    func updateBaseDir(path: String) throws {
+    public func updateBaseDir(path: String) throws {
         let url = URL(fileURLWithPath: path)
         var isDirectory: ObjCBool = false
         
-        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+        if Foundation.FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
             if !isDirectory.boolValue {
-                throw NSError(domain: "FileSystemManager", code: 1, 
+                throw NSError(domain: "FileManager", code: 1, 
                             userInfo: [NSLocalizedDescriptionKey: "Selected path is not a directory"])
             }
         } else {
-            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            try Foundation.FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
         
         baseDir = url
     }
     
-    func saveDuplicateHandling(_ handling: String) {
+    public func saveDuplicateHandling(_ handling: String) {
         guard ["rename", "skip", "replace"].contains(handling) else { return }
         currentDuplicateHandling = handling
     }
     
-    func updateMapping(category: String, path: String) {
+    public func updateMapping(category: String, path: String) {
         customPaths[category] = path
         saveSettings()
         objectWillChange.send()
     }
     
-    func getCustomPath(for category: String) -> String? {
+    public func getCustomPath(for category: String) -> String? {
         return customPaths[category]
     }
     
@@ -116,74 +114,6 @@ class FileSystemManager: ObservableObject {
             try data.write(to: settingsURL)
         } catch {
             print("Error saving settings: \(error)")
-        }
-    }
-    
-    func organizeFile(at url: URL) throws {
-        let ext = "." + url.pathExtension.lowercased()
-        var category = "Others"
-        
-        // Check if file is a screenshot
-        if [".png", ".jpg", ".jpeg"].contains(ext) {
-            let filename = url.lastPathComponent.lowercased()
-            if filename.contains("screen shot") || filename.contains("screenshot") {
-                category = "Screenshots"
-            }
-        }
-        
-        // Find category for extension
-        if category == "Others" {
-            for (cat, extensions) in categories {
-                if extensions.contains(ext) {
-                    category = cat
-                    break
-                }
-            }
-        }
-        
-        // Get destination directory (custom path or default)
-        let destDir: URL
-        if let customPath = customPaths[category] {
-            destDir = URL(fileURLWithPath: customPath)
-        } else {
-            destDir = baseDir.appendingPathComponent(category)
-        }
-        
-        try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
-        var destURL = destDir.appendingPathComponent(url.lastPathComponent)
-        
-        // Handle duplicates based on settings
-        if FileManager.default.fileExists(atPath: destURL.path) {
-            switch currentDuplicateHandling {
-            case "skip":
-                return
-            case "replace":
-                try? FileManager.default.removeItem(at: destURL)
-            case "rename":
-                var counter = 1
-                let filename = url.deletingPathExtension().lastPathComponent
-                let ext = url.pathExtension
-                
-                while FileManager.default.fileExists(atPath: destURL.path) {
-                    destURL = destDir.appendingPathComponent("\(filename)_\(counter).\(ext)")
-                    counter += 1
-                }
-            default:
-                break
-            }
-        }
-        
-        try FileManager.default.moveItem(at: url, to: destURL)
-    }
-    
-    func scanDirectory(at path: String) -> [String] {
-        do {
-            let fileManager = FileManager.default
-            let files = try fileManager.contentsOfDirectory(atPath: path)
-            return files
-        } catch {
-            print("Error scanning directory: \(error)")
-            return []
         }
     }
 } 

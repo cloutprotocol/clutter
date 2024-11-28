@@ -1,0 +1,69 @@
+Cr4sh0ut - Development Guide
+===========================
+
+Project Structure
+----------------
+- Swift Package Manager (SPM) based project
+- Minimum macOS version: 13.0
+- Dark mode only application
+- Minimum window size: 800x600
+
+# Build and Run
+cd /Users/cloutcoin/GitHub/clutter/macos && swift build -c release && ./.build/release/Cr4sh0ut
+
+# Clean Build
+cd /Users/cloutcoin/GitHub/clutter/macos && rm -rf .build && swift build
+
+# Open in Xcode
+cd /Users/cloutcoin/GitHub/clutter/macos && open -a Xcode .
+
+# Fix Preview Issues
+1. File > Packages > Reset Package Caches
+2. File > Packages > Resolve Package Versions
+3. Product > Clean Build Folder
+4. Build again
+
+# Module Structure
+Cr4sh0ut (main app)
+├── Cr4sh0utUI (Components)
+│   └── ReactiveGrid
+├── Cr4sh0utViews (Views)
+│   ├── ContentView
+│   └── SettingsView
+└── Cr4sh0utManagers (Logic)
+    └── FileManager
+
+# Common SwiftUI Modifiers
+.frame(maxWidth: .infinity)
+.background(.ultraThinMaterial)
+.clipShape(RoundedRectangle(cornerRadius: 12))
+.preferredColorScheme(.dark)
+
+Development
+----------
+- Main targets:
+  * Cr4sh0ut (executable)
+  * Cr4sh0utUI (UI components)
+  * Cr4sh0utViews (View layouts)
+  * Cr4sh0utManagers (Business logic)
+
+- Preview support enabled in debug builds
+- Uses upcoming feature "BareSlashRegexLiterals"
+
+Dependencies
+-----------
+- No external dependencies
+- Uses native SwiftUI framework
+
+File Organization
+----------------
+- src/
+  ├── Components/  (UI components)
+  ├── Managers/    (Business logic)
+  ├── Views/       (SwiftUI views)
+  └── Cr4sh0utApp.swift (Main app)
+
+Build Configurations
+------------------
+- Debug: Includes previews and testing
+- Release: Optimized for distribution

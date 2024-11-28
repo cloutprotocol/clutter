@@ -14,3 +14,5 @@ when using pip always use pip3 and setup a virtual env
 
 when instructed to run app use $ cd /Users/cloutcoin/GitHub/clutter/macos/cr4sh0ut/.build/release && ./Cr4sh0ut
 when instructed to build and run us $ cd /Users/cloutcoin/GitHub/clutter/macos/cr4sh0ut && swift build -c release && ./.build/release/Cr4sh0ut
+
+DONT BE DESTRUCTIVE WHEN EDITING CODE! DO SURGICAL CHANGES AND ITERATIVE DEVELOPMENT
