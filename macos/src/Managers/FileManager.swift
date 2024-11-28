@@ -60,7 +60,7 @@ public class FileManager: ObservableObject {
             }
         } else {
             baseDir = Foundation.FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("OrganizedFiles")
+                .appendingPathComponent("cr4sh0ut")
             currentDuplicateHandling = "rename"
         }
         
@@ -115,5 +115,34 @@ public class FileManager: ObservableObject {
         } catch {
             print("Error saving settings: \(error)")
         }
+    }
+    
+    public func determineCategory(for url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        
+        // Handle bundles first
+        if url.hasDirectoryPath && [".app", ".logicx", ".vst3"].contains(".\(ext)") {
+            if ext == "logicx" {
+                return "Logic Projects"
+            }
+            return "Applications"
+        }
+        
+        // Check if it's a screenshot
+        let filename = url.lastPathComponent.lowercased()
+        if ext == "png" || ext == "jpg" || ext == "jpeg" {
+            if filename.contains("screenshot") || filename.contains("screen shot") {
+                return "Screenshots"
+            }
+        }
+        
+        // Check categories
+        for (category, extensions) in categories {
+            if extensions.contains(".\(ext)") {
+                return category
+            }
+        }
+        
+        return "Others"
     }
 } 
