@@ -82,20 +82,24 @@ public struct ContentView: View {
                         Text("\(filesProcessed) files processed")
                             .foregroundColor(.white)
                     } else {
-                        ZStack {
-                            Circle()
-                                .fill(Color.white.opacity(0.1))
-                                .frame(width: 80, height: 80)
-                                .blur(radius: isDraggingOver ? 10 : 5)
-                            
-                            Image(systemName: "arrow.down.circle")
-                                .font(.system(size: 40))
-                                .foregroundColor(.white)
-                                .opacity(isDraggingOver ? 1 : 0.8)
-                                .scaleEffect(isDraggingOver ? 1.1 : 1.0)
-                                .animation(.spring(response: 0.3), value: isDraggingOver)
+                        Button(action: {
+                            NSWorkspace.shared.open(fileManager.baseDir)
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white.opacity(0.1))
+                                    .frame(width: 80, height: 80)
+                                    .blur(radius: isDraggingOver ? 10 : 5)
+                                
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.white)
+                                    .opacity(isDraggingOver ? 1 : 0.8)
+                                    .scaleEffect(isDraggingOver ? 1.1 : 1.0)
+                                    .animation(.spring(response: 0.3), value: isDraggingOver)
+                            }
                         }
-                        
+                        .buttonStyle(.plain)
                         Text("Drop files here")
                             .font(.title2)
                             .foregroundColor(.white)
@@ -104,7 +108,6 @@ public struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: 600)
-                .contentShape(Rectangle())
                 .onDrop(of: [.fileURL], isTargeted: $isDraggingOver) { providers in
                     Task {
                         await handleDrop(providers)
