@@ -14,6 +14,7 @@ build/
 *.egg-info/
 
 # IDE specific files
+.build/
 .idea/
 .vscode/
 *.swp

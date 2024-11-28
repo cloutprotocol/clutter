@@ -1,10 +1,22 @@
 import Foundation
+import SwiftUI
 
-class FileSystemManager {
+class FileSystemManager: ObservableObject {
     static let shared = FileSystemManager()
     
-    private let baseDir: URL
-    private let categories: [String: [String]] = [
+    @Published var baseDir: URL {
+        didSet {
+            saveSettings()
+        }
+    }
+    
+    @Published private(set) var currentDuplicateHandling: String {
+        didSet {
+            saveSettings()
+        }
+    }
+    
+    @Published var categories: [String: [String]] = [
         "Applications": [".app", ".vst3", ".dmg"],
         "Logic Projects": [".logicx"],
         "Screenshots": [],
@@ -34,18 +46,85 @@ class FileSystemManager {
         "Others": []
     ]
     
+    private var customPaths: [String: String] = [:]
+    private let settingsURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("cr4sh0ut_settings.json")
+    
     private init() {
-        baseDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("OrganizedFiles")
+        // Load settings or use defaults
+        if let data = try? Data(contentsOf: settingsURL),
+           let settings = try? JSONDecoder().decode([String: String].self, from: data) {
+            baseDir = URL(fileURLWithPath: settings["baseDir"] ?? "")
+            currentDuplicateHandling = settings["duplicateHandling"] ?? "rename"
+            if let pathsData = settings["customPaths"]?.data(using: .utf8),
+               let paths = try? JSONDecoder().decode([String: String].self, from: pathsData) {
+                customPaths = paths
+            }
+        } else {
+            baseDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("OrganizedFiles")
+            currentDuplicateHandling = "rename"
+        }
+        
         try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
     }
     
+    func updateBaseDir(path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            if !isDirectory.boolValue {
+                throw NSError(domain: "FileSystemManager", code: 1, 
+                            userInfo: [NSLocalizedDescriptionKey: "Selected path is not a directory"])
+            }
+        } else {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        
+        baseDir = url
+    }
+    
+    func saveDuplicateHandling(_ handling: String) {
+        guard ["rename", "skip", "replace"].contains(handling) else { return }
+        currentDuplicateHandling = handling
+    }
+    
+    func updateMapping(category: String, path: String) {
+        customPaths[category] = path
+        saveSettings()
+        objectWillChange.send()
+    }
+    
+    func getCustomPath(for category: String) -> String? {
+        return customPaths[category]
+    }
+    
+    private func saveSettings() {
+        var settings: [String: String] = [
+            "baseDir": baseDir.path,
+            "duplicateHandling": currentDuplicateHandling
+        ]
+        
+        if let pathsData = try? JSONEncoder().encode(customPaths),
+           let pathsString = String(data: pathsData, encoding: .utf8) {
+            settings["customPaths"] = pathsString
+        }
+        
+        do {
+            let data = try JSONEncoder().encode(settings)
+            try data.write(to: settingsURL)
+        } catch {
+            print("Error saving settings: \(error)")
+        }
+    }
+    
     func organizeFile(at url: URL) throws {
-        let ext = url.pathExtension.lowercased()
+        let ext = "." + url.pathExtension.lowercased()
         var category = "Others"
         
         // Check if file is a screenshot
-        if ["png", "jpg", "jpeg"].contains(ext) {
+        if [".png", ".jpg", ".jpeg"].contains(ext) {
             let filename = url.lastPathComponent.lowercased()
             if filename.contains("screen shot") || filename.contains("screenshot") {
                 category = "Screenshots"
@@ -55,27 +134,42 @@ class FileSystemManager {
         // Find category for extension
         if category == "Others" {
             for (cat, extensions) in categories {
-                if extensions.contains("." + ext) {
+                if extensions.contains(ext) {
                     category = cat
                     break
                 }
             }
         }
         
-        let destDir = baseDir.appendingPathComponent(category)
-        try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
+        // Get destination directory (custom path or default)
+        let destDir: URL
+        if let customPath = customPaths[category] {
+            destDir = URL(fileURLWithPath: customPath)
+        } else {
+            destDir = baseDir.appendingPathComponent(category)
+        }
         
+        try FileManager.default.createDirectory(at: destDir, withIntermediateDirectories: true)
         var destURL = destDir.appendingPathComponent(url.lastPathComponent)
         
-        // Handle duplicates
+        // Handle duplicates based on settings
         if FileManager.default.fileExists(atPath: destURL.path) {
-            var counter = 1
-            let filename = url.deletingPathExtension().lastPathComponent
-            let ext = url.pathExtension
-            
-            while FileManager.default.fileExists(atPath: destURL.path) {
-                destURL = destDir.appendingPathComponent("\(filename)_\(counter).\(ext)")
-                counter += 1
+            switch currentDuplicateHandling {
+            case "skip":
+                return
+            case "replace":
+                try? FileManager.default.removeItem(at: destURL)
+            case "rename":
+                var counter = 1
+                let filename = url.deletingPathExtension().lastPathComponent
+                let ext = url.pathExtension
+                
+                while FileManager.default.fileExists(atPath: destURL.path) {
+                    destURL = destDir.appendingPathComponent("\(filename)_\(counter).\(ext)")
+                    counter += 1
+                }
+            default:
+                break
             }
         }
         

@@ -1,12 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+@available(macOS 14.0, *)
 public struct ContentView: View {
     @State private var selectedPath: String = ""
     @State private var isProcessing = false
     @State private var filesProcessed = 0
     @State private var totalSizeProcessed: Int64 = 0
     @State private var statusMessage = "Ready"
+    @State private var isDraggingOver = false
     
     public init() {}
     
@@ -16,23 +18,33 @@ public struct ContentView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            // Drop zone
+            // Drop zone with reactive grid
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.gray, style: StrokeStyle(lineWidth: 2, dash: [5]))
+                ReactiveGrid()
                     .frame(height: 200)
-                    .overlay(
-                        VStack {
-                            Image(systemName: "arrow.down.doc.fill")
-                                .font(.system(size: 30))
-                            Text("Drop files here")
-                                .font(.headline)
-                        }
-                    )
+                    .opacity(isDraggingOver ? 0.8 : 0.4)
+                    .animation(.easeInOut(duration: 0.2), value: isDraggingOver)
+                
+                VStack {
+                    Image(systemName: "arrow.down.doc.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.white)
+                    Text("Drop files here")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                }
             }
+            .frame(maxWidth: .infinity)
             .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 handleDroppedFiles(providers)
+                isDraggingOver = false
                 return true
+            }
+            .onDragEnter { _ in
+                isDraggingOver = true
+            }
+            .onDragExit { _ in
+                isDraggingOver = false
             }
             
             // Progress section
@@ -102,4 +114,26 @@ public struct ContentView: View {
         formatter.countStyle = .file
         return formatter.string(fromByteCount: size)
     }
+}
+
+// Drag and Drop modifiers
+extension View {
+    func onDragEnter(perform action: @escaping (DragInfo) -> Void) -> some View {
+        self.onDrop(of: [.fileURL], isTargeted: nil) { providers, location in
+            action(DragInfo(location: location, providers: providers))
+            return false
+        }
+    }
+    
+    func onDragExit(perform action: @escaping (DragInfo) -> Void) -> some View {
+        self.onDrop(of: [.fileURL], isTargeted: nil) { providers, location in
+            action(DragInfo(location: location, providers: providers))
+            return false
+        }
+    }
+}
+
+struct DragInfo {
+    let location: CGPoint
+    let providers: [NSItemProvider]
 } 

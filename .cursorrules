@@ -11,3 +11,6 @@ when you are asked to use mcp, please use the mcp function in mcp.py. this exist
     call the function by importing it in command line, it is a asycn function so you can use await to call it.
 
 when using pip always use pip3 and setup a virtual env
+
+when instructed to run app use $ cd /Users/cloutcoin/GitHub/clutter/macos/cr4sh0ut/.build/release && ./Cr4sh0ut
+when instructed to build and run us $ cd /Users/cloutcoin/GitHub/clutter/macos/cr4sh0ut && swift build -c release && ./.build/release/Cr4sh0ut
