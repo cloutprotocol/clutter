@@ -41,6 +41,7 @@ final class MusicViewModel: ObservableObject {
     @Published var isShuffleEnabled = false
     @Published var repeatMode: RepeatMode = .none
     @Published var fftData: [Float] = Array(repeating: 0, count: 512)
+    @Published var previewTime: Double?
     
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -118,15 +119,17 @@ final class MusicViewModel: ObservableObject {
     
     func playTrack(_ item: AudioItem) {
         currentTrack = item
+        duration = item.duration
+        currentTime = 0
         
         // Setup AVPlayer for timeline tracking
         let playerItem = AVPlayerItem(url: item.url)
         if player == nil {
             player = AVPlayer(playerItem: playerItem)
-            setupTimeObserver()
         } else {
             player?.replaceCurrentItem(with: playerItem)
         }
+        setupTimeObserver()
         
         // Setup AudioKit player
         do {
@@ -146,8 +149,8 @@ final class MusicViewModel: ObservableObject {
             }
             
             player?.volume = volume
+            player?.play()
             isPlaying = true
-            duration = item.duration
         } catch {
             print("Error playing file: \(error)")
         }
@@ -171,18 +174,42 @@ final class MusicViewModel: ObservableObject {
     }
     
     private func setupTimeObserver() {
-        let interval = CMTime(seconds: 0.5, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
+        // Remove existing observer if any
+        if let existingObserver = timeObserver {
+            player?.removeTimeObserver(existingObserver)
+        }
+        
+        // Create new observer with shorter interval for smoother updates
+        let interval = CMTime(seconds: 0.1, preferredTimescale: CMTimeScale(NSEC_PER_SEC))
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            guard let self = self else { return }
             Task { @MainActor in
-                self?.currentTime = time.seconds
+                self.currentTime = time.seconds
+                
+                // Handle track completion
+                if self.currentTime >= self.duration {
+                    if self.repeatMode == .one {
+                        self.seek(to: 0)
+                        self.player1?.play()
+                        self.player?.play()
+                    } else {
+                        self.playNext()
+                    }
+                }
             }
         }
     }
     
     func seek(to percentage: Double) {
-        guard let duration = player?.currentItem?.duration else { return }
-        let time = CMTime(seconds: duration.seconds * percentage, preferredTimescale: duration.timescale)
-        player?.seek(to: time)
+        guard let player = player else { return }
+        let targetTime = duration * percentage
+        let time = CMTime(seconds: targetTime, preferredTimescale: 600)
+        player.seek(to: time) { [weak self] _ in
+            if let player = self?.player1 {
+                player.seek(time: targetTime)
+            }
+        }
+        currentTime = targetTime
     }
     
     func playNext() {
@@ -242,6 +269,9 @@ final class MusicViewModel: ObservableObject {
     }
     
     deinit {
+        if let observer = timeObserver {
+            player?.removeTimeObserver(observer)
+        }
         player1?.stop()
         fft?.stop()
         engine.stop()
@@ -345,6 +375,186 @@ struct AudioSpectrumView: View {
     }
 }
 
+// Add these structs before PlayerView
+private func formatTime(_ time: Double) -> String {
+    let minutes = Int(time) / 60
+    let seconds = Int(time) % 60
+    return String(format: "%d:%02d", minutes, seconds)
+}
+
+struct WinampScrubber: View {
+    @ObservedObject var viewModel: MusicViewModel
+    @State private var isDragging = false
+    @State private var localPosition: CGFloat = 0
+    @State private var showTooltip = false
+    let height: CGFloat = 10
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background groove
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(
+                        colors: [Color.black.opacity(0.6), Color.black.opacity(0.3)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .strokeBorder(Color.black.opacity(0.8), lineWidth: 1)
+                    )
+                
+                // Progress bar
+                Rectangle()
+                    .fill(LinearGradient(
+                        colors: [Color.green.opacity(0.8), Color.green.opacity(0.4)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ))
+                    .frame(width: currentWidth(in: geometry))
+                
+                // Mini peaks visualization
+                ForEach(0..<Int(geometry.size.width/3), id: \.self) { index in
+                    let x = CGFloat(index) * 3
+                    let height = CGFloat.random(in: 2...6)
+                    Rectangle()
+                        .fill(Color.green.opacity(0.3))
+                        .frame(width: 1, height: height)
+                        .offset(x: x, y: (10 - height) / 2)
+                }
+                
+                // Playhead
+                Rectangle()
+                    .fill(Color.white)
+                    .frame(width: 2)
+                    .frame(height: height + 4)
+                    .position(x: currentPosition(in: geometry), y: height/2)
+                    .shadow(color: .black.opacity(0.5), radius: 1)
+                
+                // Tooltip
+                if showTooltip {
+                    Text(formatTime(tooltipTime(in: geometry)))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(Color.black.opacity(0.8))
+                        .cornerRadius(4)
+                        .position(x: currentPosition(in: geometry), y: -15)
+                }
+            }
+            .frame(height: height)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        showTooltip = true
+                        localPosition = min(max(0, value.location.x), geometry.size.width)
+                        let percentage = localPosition / geometry.size.width
+                        viewModel.seek(to: percentage * viewModel.duration)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        showTooltip = false
+                    }
+            )
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        showTooltip = true
+                    }
+                    .onEnded { _ in
+                        showTooltip = false
+                    }
+            )
+        }
+    }
+    
+    private func currentWidth(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return localPosition
+        }
+        return geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1))
+    }
+    
+    private func currentPosition(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return localPosition
+        }
+        return geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1))
+    }
+    
+    private func tooltipTime(in geometry: GeometryProxy) -> Double {
+        let percentage = currentPosition(in: geometry) / geometry.size.width
+        return percentage * viewModel.duration
+    }
+}
+
+struct WinampVolume: View {
+    @Binding var volume: Float
+    @State private var isDragging = false
+    @State private var localVolume: CGFloat = 0
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background groove
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(LinearGradient(
+                        colors: [Color.black.opacity(0.6), Color.black.opacity(0.3)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .strokeBorder(Color.black.opacity(0.8), lineWidth: 1)
+                    )
+                
+                // Volume level
+                Rectangle()
+                    .fill(LinearGradient(
+                        colors: [Color.green.opacity(0.8), Color.green.opacity(0.4)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ))
+                    .frame(width: currentWidth(in: geometry))
+                
+                // Volume handle
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.white)
+                    .frame(width: 3, height: geometry.size.height + 1)
+                    .position(x: currentPosition(in: geometry), y: geometry.size.height/2)
+                    .shadow(color: .black.opacity(0.5), radius: 1)
+            }
+            .frame(height: 6)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        localVolume = min(max(0, value.location.x), geometry.size.width)
+                        volume = Float(localVolume / geometry.size.width)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+        }
+    }
+    
+    private func currentWidth(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return localVolume
+        }
+        return geometry.size.width * CGFloat(volume)
+    }
+    
+    private func currentPosition(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return localVolume
+        }
+        return geometry.size.width * CGFloat(volume)
+    }
+}
+
 // Update view declarations
 public struct MusicView: View {
     @StateObject private var viewModel: MusicViewModel
@@ -417,50 +627,176 @@ private struct CompactHeaderView: View {
     }
 }
 
+// Update PlayerView
 private struct PlayerView: View {
     @ObservedObject var viewModel: MusicViewModel
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top controls
-            HStack(spacing: 16) {
-                if let track = viewModel.currentTrack {
+            // Track info
+            if let track = viewModel.currentTrack {
+                HStack {
                     Text(track.title)
                         .lineLimit(1)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(.green)
                     
                     if let artist = track.artist {
                         Text("•")
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(.green.opacity(0.5))
                         Text(artist)
                             .lineLimit(1)
                             .font(.system(size: 14))
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.green.opacity(0.7))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal)
+            }
+            
+            // Timeline
+            HStack(spacing: 4) {
+                Text(formatTime(viewModel.currentTime))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.green)
+                
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        // Track background
+                        Capsule()
+                            .fill(Color.green.opacity(0.2))
+                            .frame(height: 6)
+                        
+                        // Progress
+                        Capsule()
+                            .fill(Color.green)
+                            .frame(width: geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1)), height: 6)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                let percentage = max(0, min(1, value.location.x / geometry.size.width))
+                                viewModel.seek(to: percentage)
+                            }
+                    )
+                }
+                .frame(height: 24)
+                
+                Text(formatTime(viewModel.duration))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.green)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            
+            // Controls
+            HStack(spacing: 16) {
+                // Left controls
+                HStack(spacing: 8) {
+                    Button(action: viewModel.togglePlayPause) {
+                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 16))
+                    }
+                    
+                    Button(action: viewModel.playPrevious) {
+                        Image(systemName: "backward.fill")
+                            .font(.system(size: 14))
+                    }
+                    
+                    Button(action: viewModel.playNext) {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 14))
+                    }
+                    
+                    Button(action: viewModel.toggleShuffle) {
+                        Image(systemName: "shuffle")
+                            .font(.system(size: 14))
+                            .foregroundColor(viewModel.isShuffleEnabled ? .green : .white.opacity(0.7))
+                    }
+                    
+                    Button(action: viewModel.toggleRepeat) {
+                        Image(systemName: viewModel.repeatMode.icon)
+                            .font(.system(size: 14))
+                            .foregroundColor(viewModel.repeatMode.color)
                     }
                 }
                 
                 Spacer()
                 
-                KnobControl(value: Binding(
-                    get: { viewModel.volume },
-                    set: { viewModel.setVolume($0) }
-                )) { value in
-                    viewModel.setVolume(value)
+                // Right controls
+                HStack(spacing: 4) {
+                    if let track = viewModel.currentTrack {
+                        Menu {
+                            Button(action: { viewModel.openFile(track.url) }) {
+                                Label("Open File", systemImage: "doc")
+                            }
+                            Button(action: { viewModel.openInFinder(track.url) }) {
+                                Label("Show in Finder", systemImage: "folder")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .foregroundColor(.green)
+                                .frame(width: 24, height: 24)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                    }
+                    
+                    // Volume control
+                    HStack(spacing: 4) {
+                        Image(systemName: "speaker.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                            .frame(height: 24)
+                        
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(Color.green.opacity(0.2))
+                                    .frame(height: 6)
+                                
+                                Capsule()
+                                    .fill(Color.green)
+                                    .frame(width: geometry.size.width * CGFloat(viewModel.volume), height: 6)
+                            }
+                            .frame(maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { value in
+                                        let percentage = max(0, min(1, value.location.x / geometry.size.width))
+                                        viewModel.setVolume(Float(percentage))
+                                    }
+                            )
+                        }
+                        .frame(width: 60, height: 24)
+                        
+                        Image(systemName: "speaker.wave.3.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.green)
+                            .frame(height: 24)
+                    }
                 }
-                .frame(width: 40, height: 40)
             }
+            .buttonStyle(.plain)
+            .foregroundColor(.white)
             .padding(.horizontal)
             
             // Visualizer
             AudioSpectrumView(fftData: viewModel.fftData)
                 .frame(height: 60)
                 .padding(.horizontal)
-            
-            // ... rest of the player controls ...
         }
         .padding(.vertical, 8)
         .background(Color.black.opacity(0.3))
+    }
+    
+    private func formatTime(_ time: Double) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 }
 
@@ -573,6 +909,111 @@ private struct KnobControl: View {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovering = hovering
             }
+        }
+    }
+}
+
+struct ModernSlider: View {
+    let value: Double
+    let onChanged: (Double) -> Void
+    let width: CGFloat
+    let height: CGFloat
+    let color: Color
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Track background
+                RoundedRectangle(cornerRadius: height/2)
+                    .fill(color.opacity(0.2))
+                
+                // Value track
+                RoundedRectangle(cornerRadius: height/2)
+                    .fill(color)
+                    .frame(width: max(0, min(geometry.size.width, geometry.size.width * value)))
+                
+                // Handle
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: height * 2, height: height * 2)
+                    .shadow(color: .black.opacity(0.2), radius: 2)
+                    .position(x: max(height, min(geometry.size.width - height, geometry.size.width * value)), 
+                             y: geometry.size.height/2)
+            }
+        }
+        .frame(width: width, height: height)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let width = width - height * 2 // Adjust for handle width
+                    let xPos = value.location.x - height // Adjust for handle offset
+                    let percentage = max(0, min(1, xPos / width))
+                    onChanged(Double(percentage))
+                }
+        )
+    }
+}
+
+// Add TimelineScrubber struct
+struct TimelineScrubber: View {
+    @ObservedObject var viewModel: MusicViewModel
+    let width: CGFloat
+    @State private var isDragging = false
+    @State private var dragPosition: CGFloat = 0
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Base track
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.green.opacity(0.2))
+                
+                // Progress track
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.green)
+                    .frame(width: calculateWidth(in: geometry))
+                
+                // Scrubber handle
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 12, height: 12)
+                    .position(
+                        x: calculatePosition(in: geometry),
+                        y: geometry.size.height/2
+                    )
+            }
+            .frame(height: 6)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        let xPos = value.location.x
+                        let width = geometry.size.width
+                        dragPosition = min(max(0, xPos), width)
+                        let percentage = dragPosition / width
+                        viewModel.seek(to: percentage * viewModel.duration)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+        }
+    }
+    
+    private func calculateWidth(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return dragPosition
+        } else {
+            return geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1))
+        }
+    }
+    
+    private func calculatePosition(in geometry: GeometryProxy) -> CGFloat {
+        if isDragging {
+            return dragPosition
+        } else {
+            return geometry.size.width * CGFloat(viewModel.currentTime / max(viewModel.duration, 1))
         }
     }
 }
