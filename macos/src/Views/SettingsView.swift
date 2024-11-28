@@ -252,50 +252,59 @@ public struct SettingsView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
+        panel.message = "Select output directory"
         
         if panel.runModal() == .OK {
-            tempBaseDir = panel.url?.path ?? ""
+            if let url = panel.url {
+                tempBaseDir = url.path
+            }
         }
     }
     
     private func saveSettings() {
-        do {
-            try fileManager.updateBaseDir(path: tempBaseDir)
-            fileManager.saveDuplicateHandling(duplicateHandling)
-            alertMessage = "Settings saved successfully"
-            showingAlert = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                dismiss()
+        if tempBaseDir != fileManager.baseDir.path {
+            do {
+                try FileManager.default.createDirectory(atPath: tempBaseDir, withIntermediateDirectories: true)
+                fileManager.baseDir = URL(fileURLWithPath: tempBaseDir)
+                alertMessage = "Settings saved successfully"
+            } catch {
+                alertMessage = "Error creating directory: \(error.localizedDescription)"
             }
-        } catch {
-            alertMessage = "Error saving settings: \(error.localizedDescription)"
-            showingAlert = true
         }
+        
+        if duplicateHandling != fileManager.currentDuplicateHandling {
+            fileManager.currentDuplicateHandling = duplicateHandling
+        }
+        
+        showingAlert = true
     }
     
     private func duplicateButton(_ title: String, _ icon: String) -> some View {
         Button(action: {
-            duplicateHandling = title.lowercased()
-        }) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 12))
-                Text(title)
-                    .font(.system(size: 13))
+            withAnimation {
+                duplicateHandling = title.lowercased()
             }
+        }) {
+            HStack {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity)
+            .background(duplicateHandling == title.lowercased() ? Color.white.opacity(0.1) : Color.clear)
         }
         .buttonStyle(.plain)
-        .background(duplicateHandling == title.lowercased() ? 
-            Color.white.opacity(0.15) : Color.clear)
         .foregroundColor(.white)
     }
 }
 
-#Preview("Settings") {
-    SettingsView()
-        .frame(width: 700, height: 600)
-        .preferredColorScheme(.dark)
-} 
+#if DEBUG
+struct SettingsView_Previews: PreviewProvider {
+    static var previews: some View {
+        SettingsView()
+            .frame(width: 400, height: 600)
+            .preferredColorScheme(.dark)
+            .background(Color.black)
+    }
+}
+#endif 

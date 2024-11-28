@@ -8,7 +8,7 @@ struct Cr4sh0utApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        Settings { }  // Prevent SwiftUI from creating its own window
+        Settings { }
     }
 }
 
@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.collectionBehavior = .canJoinAllSpaces
         window.makeKeyAndOrderFront(nil)
         window.center()
+        window.title = "cr4sh0ut"
         
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
