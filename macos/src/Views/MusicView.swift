@@ -52,7 +52,7 @@ final class MusicViewModel: ObservableObject {
     @Published var isShuffleEnabled = false
     @Published var repeatMode: RepeatMode = .none
     @Published var fftData: [Float] = Array(repeating: 0, count: 512)
-    @Published var previewTime: Double?
+    @Published var favorites: Set<UUID> = []
     
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -224,18 +224,24 @@ final class MusicViewModel: ObservableObject {
     }
     
     func playNext() {
-        guard let current = currentTrack,
-              let currentIndex = items.firstIndex(of: current) else { return }
+        guard let current = currentTrack else {
+            if let first = currentPlaylist.first {
+                playTrack(first)
+            }
+            return
+        }
+        
+        guard let currentIndex = currentPlaylist.firstIndex(of: current) else { return }
         
         var nextIndex: Int
         if isShuffleEnabled {
-            nextIndex = Int.random(in: 0..<items.count)
-            while nextIndex == currentIndex && items.count > 1 {
-                nextIndex = Int.random(in: 0..<items.count)
+            nextIndex = Int.random(in: 0..<currentPlaylist.count)
+            while nextIndex == currentIndex && currentPlaylist.count > 1 {
+                nextIndex = Int.random(in: 0..<currentPlaylist.count)
             }
         } else {
             nextIndex = currentIndex + 1
-            if nextIndex >= items.count {
+            if nextIndex >= currentPlaylist.count {
                 if repeatMode == .all {
                     nextIndex = 0
                 } else {
@@ -244,14 +250,14 @@ final class MusicViewModel: ObservableObject {
             }
         }
         
-        playTrack(items[nextIndex])
+        playTrack(currentPlaylist[nextIndex])
     }
     
     func playPrevious() {
         guard let current = currentTrack,
-              let currentIndex = items.firstIndex(of: current),
+              let currentIndex = currentPlaylist.firstIndex(of: current),
               currentIndex > 0 else { return }
-        playTrack(items[currentIndex - 1])
+        playTrack(currentPlaylist[currentIndex - 1])
     }
     
     func toggleShuffle() {
@@ -359,13 +365,30 @@ final class MusicViewModel: ObservableObject {
             filtered.sort { $0.modificationDate > $1.modificationDate }
             filtered = Array(filtered.prefix(20))
         case .favorites:
-            // TODO: Implement favorites
-            break
+            filtered = filtered.filter { favorites.contains($0.id) }
         case .all:
             break
         }
         
         return filtered
+    }
+    
+    // Add favorite functions
+    func toggleFavorite(_ item: AudioItem) {
+        if favorites.contains(item.id) {
+            favorites.remove(item.id)
+        } else {
+            favorites.insert(item.id)
+        }
+    }
+    
+    func isFavorite(_ item: AudioItem) -> Bool {
+        favorites.contains(item.id)
+    }
+    
+    // Add computed property for current playlist
+    private var currentPlaylist: [AudioItem] {
+        filterItems(searchText: "", filter: .favorites)
     }
 }
 
@@ -886,9 +909,18 @@ private struct PlaylistView: View {
                         
                         Spacer()
                         
-                        Text(formatTime(item.duration))
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.6))
+                        HStack(spacing: 12) {
+                            Text(formatTime(item.duration))
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.6))
+                            
+                            Button(action: { viewModel.toggleFavorite(item) }) {
+                                Image(systemName: viewModel.isFavorite(item) ? "star.fill" : "star")
+                                    .foregroundColor(viewModel.isFavorite(item) ? .yellow : .green.opacity(0.7))
+                                    .font(.system(size: 12))
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 6)
