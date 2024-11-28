@@ -24,6 +24,8 @@ public struct ContentView: View {
                 EmptyView()
             case .photos:
                 PhotoView()
+            case .music:
+                MusicView()
             }
         }
     }

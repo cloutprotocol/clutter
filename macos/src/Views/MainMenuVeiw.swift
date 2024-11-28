@@ -29,7 +29,11 @@ struct MainMenuView: View {
                     viewRouter.currentView = .photos
                 }
             },
-            CardInfo(title: "Music", icon: "music.note", color: .purple) { print("Music tapped") },
+            CardInfo(title: "Music", icon: "music.note", color: .purple) {
+                withAnimation {
+                    viewRouter.currentView = .music
+                }
+            },
             CardInfo(title: "Settings", icon: "gear", color: .gray) { print("Settings tapped") },
             CardInfo(title: "News", icon: "newspaper.fill", color: .green) { print("News tapped") },
             CardInfo(title: "Weather", icon: "cloud.sun.fill", color: .cyan) { print("Weather tapped") },

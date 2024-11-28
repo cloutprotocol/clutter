@@ -13,7 +13,10 @@ let package = Package(
             targets: ["Cr4sh0ut"]
         )
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/AudioKit/AudioKit.git", from: "5.6.1"),
+        .package(url: "https://github.com/AudioKit/AudioKitUI.git", from: "0.3.5")
+    ],
     targets: [
         .executableTarget(
             name: "Cr4sh0ut",
@@ -31,6 +34,9 @@ let package = Package(
         ),
         .target(
             name: "Cr4sh0utUI",
+            dependencies: [
+                .product(name: "AudioKitUI", package: "AudioKitUI")
+            ],
             path: "src/Components",
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals"),
@@ -39,6 +45,9 @@ let package = Package(
         ),
         .target(
             name: "Cr4sh0utManagers",
+            dependencies: [
+                .product(name: "AudioKit", package: "AudioKit")
+            ],
             path: "src/Managers",
             swiftSettings: [
                 .enableUpcomingFeature("BareSlashRegexLiterals"),
@@ -49,7 +58,9 @@ let package = Package(
             name: "Cr4sh0utViews",
             dependencies: [
                 "Cr4sh0utUI",
-                "Cr4sh0utManagers"
+                "Cr4sh0utManagers",
+                .product(name: "AudioKit", package: "AudioKit"),
+                .product(name: "AudioKitUI", package: "AudioKitUI")
             ],
             path: "src/Views",
             swiftSettings: [

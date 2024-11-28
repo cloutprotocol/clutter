@@ -13,5 +13,6 @@ public class ViewRouter: ObservableObject {
         case about
         case help
         case photos
+        case music
     }
 } 
