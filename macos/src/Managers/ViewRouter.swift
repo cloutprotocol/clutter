@@ -12,5 +12,6 @@ public class ViewRouter: ObservableObject {
         case menu
         case about
         case help
+        case photos
     }
 } 

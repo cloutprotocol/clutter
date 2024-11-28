@@ -22,6 +22,8 @@ public struct ContentView: View {
             case .help:
                 // Add HelpView when needed
                 EmptyView()
+            case .photos:
+                PhotoView()
             }
         }
     }
