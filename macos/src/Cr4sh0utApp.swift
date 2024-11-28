@@ -5,14 +5,32 @@ import Cr4sh0utManagers
 
 @main
 struct Cr4sh0utApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
     var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .frame(minWidth: 800, minHeight: 600)
-                .preferredColorScheme(.dark)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        Settings { }  // Prevent SwiftUI from creating its own window
+    }
+}
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var window: NSWindow!
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        
+        window.contentView = NSHostingView(rootView: ContentView())
+        window.level = .floating
+        window.collectionBehavior = .canJoinAllSpaces
+        window.makeKeyAndOrderFront(nil)
+        window.center()
+        
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
