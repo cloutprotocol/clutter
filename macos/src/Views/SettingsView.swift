@@ -76,13 +76,11 @@ public struct SettingsView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                 
-                Picker("", selection: $duplicateHandling) {
-                    Text("Rename").tag("rename")
-                    Text("Skip").tag("skip")
-                    Text("Replace").tag("replace")
+                HStack(spacing: 1) {
+                    duplicateButton("Rename", "arrow.triangle.branch")
+                    duplicateButton("Skip", "arrow.forward.circle")
+                    duplicateButton("Replace", "arrow.2.circlepath")
                 }
-                .pickerStyle(.segmented)
-                .padding(4)
                 .background(Color.white.opacity(0.1))
                 .cornerRadius(8)
             }
@@ -94,11 +92,38 @@ public struct SettingsView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.plain)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(0.2),
+                        Color.white.opacity(0.1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
             .padding(.horizontal)
             .padding(.top, 12)
             
             Spacer()
+            
+            // About Footer
+            VStack(spacing: 4) {
+                Text("cr4sh0ut")
+                    .font(.system(size: 14, weight: .medium))
+                Text("v1.11")
+                    .font(.system(size: 12, weight: .light))
+                Text("all rights reserved.")
+                    .font(.system(size: 10, weight: .light))
+            }
+            .foregroundColor(.white.opacity(0.6))
+            .padding(.bottom, 20)
         }
         .padding(.top, 20)
     }
@@ -203,7 +228,7 @@ public struct SettingsView: View {
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity)
             }
         }
     }
@@ -246,6 +271,26 @@ public struct SettingsView: View {
             alertMessage = "Error saving settings: \(error.localizedDescription)"
             showingAlert = true
         }
+    }
+    
+    private func duplicateButton(_ title: String, _ icon: String) -> some View {
+        Button(action: {
+            duplicateHandling = title.lowercased()
+        }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                Text(title)
+                    .font(.system(size: 13))
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+        .background(duplicateHandling == title.lowercased() ? 
+            Color.white.opacity(0.15) : Color.clear)
+        .foregroundColor(.white)
     }
 }
 
