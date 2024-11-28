@@ -4,7 +4,7 @@ import Foundation
 
 public struct ReactiveGrid: View {
     @State private var mouseLocation: CGPoint = .zero
-    @State private var isDragging: Bool = false
+    @State private var isHovering: Bool = false
     
     // Fixed spacing between dots
     private let spacing: CGFloat = 16
@@ -48,34 +48,31 @@ public struct ReactiveGrid: View {
                     }
                 }
             }
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        mouseLocation = value.location
-                        isDragging = true
-                    }
-                    .onEnded { _ in
-                        withAnimation(.easeOut(duration: 0.5)) {
-                            isDragging = false
-                            mouseLocation = .zero
-                        }
-                    }
-            )
             .onHover { hovering in
-                withAnimation(.easeOut(duration: 0.5)) {
-                    isDragging = hovering
-                    if !hovering {
+                isHovering = hovering
+                if !hovering {
+                    withAnimation(.easeOut(duration: 0.5)) {
                         mouseLocation = .zero
                     }
                 }
             }
+            .onContinuousHover(perform: { phase in
+                switch phase {
+                case .active(let location):
+                    mouseLocation = location
+                case .ended:
+                    withAnimation(.easeOut(duration: 0.5)) {
+                        mouseLocation = .zero
+                    }
+                }
+            })
         }
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
     
     private func opacity(for position: CGPoint, mouseLocation: CGPoint) -> Double {
-        guard isDragging && mouseLocation != .zero else { return 0.3 }
+        guard isHovering && mouseLocation != .zero else { return 0.3 }
         
         let distance = sqrt(
             pow(position.x - mouseLocation.x, 2) +
@@ -88,8 +85,8 @@ public struct ReactiveGrid: View {
         // Create ripple effect
         let ripple = sin(normalizedDistance * .pi * 2) * 0.5 + 0.5
         let falloff = 1.0 - min(normalizedDistance, 1.0)
-        
         let opacity = ripple * falloff * 0.9 + 0.3
+        
         return opacity
     }
 }

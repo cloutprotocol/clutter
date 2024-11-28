@@ -119,9 +119,9 @@ public struct ContentView: View {
                     .padding(.bottom)
                     .animation(.easeInOut(duration: 0.2), value: statusMessage)
             }
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
+            .overlay(
+                SlideOutSettings(isPresented: $showSettings)
+            )
         }
     }
     
@@ -189,6 +189,84 @@ public struct ContentView: View {
         }
         
         try FileManager.default.moveItem(at: url, to: finalURL)
+    }
+}
+
+struct SlideOutSettings: View {
+    @Binding var isPresented: Bool
+    @State private var offset: CGFloat = 400
+    
+    var body: some View {
+        GeometryReader { geometry in
+            if isPresented {
+                HStack(spacing: 0) {
+                    Spacer()
+                    
+                    // Settings Panel
+                    VStack(spacing: 0) {
+                        // Header
+                        HStack {
+                            Text("Settings")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                            Spacer()
+                            Button {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isPresented = false
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding()
+                        .background(Color.black.opacity(0.3))
+                        
+                        // Settings Content
+                        SettingsView()
+                            .background(Color.black.opacity(0.2))
+                    }
+                    .frame(width: 400)
+                    .background(
+                        VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                    )
+                    .offset(x: offset)
+                }
+                .transition(.opacity)
+                .onAppear {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        offset = 0
+                    }
+                }
+            }
+        }
+        .onChange(of: isPresented) { newValue in
+            if !newValue {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    offset = 400
+                }
+            }
+        }
+    }
+}
+
+struct VisualEffectView: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+    
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let visualEffectView = NSVisualEffectView()
+        visualEffectView.material = material
+        visualEffectView.blendingMode = blendingMode
+        visualEffectView.state = .active
+        return visualEffectView
+    }
+    
+    func updateNSView(_ visualEffectView: NSVisualEffectView, context: Context) {
+        visualEffectView.material = material
+        visualEffectView.blendingMode = blendingMode
     }
 }
 
